@@ -4,6 +4,7 @@ import re
 import sqlite3
 
 PDF_FOLDER = "pdfs"
+DB_PATH = "dandori.db"
 
 def extract_text(pdf_path):
     doc = fitz.open(pdf_path)
@@ -39,9 +40,59 @@ def extract_fields(text):
         "description": description
     }
 
-# Test on one PDF first
-path = "pdfs/class_140_enchanted_yarn_sculpting_crafting_mythical_creatures.pdf"
-text = extract_text(path)
-fields = extract_fields(text)
-for k, v in fields.items():
-    print(f"{k}: {v}")
+def create_database(conn):
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS courses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            instructor TEXT,
+            location TEXT,
+            course_type TEXT,
+            cost TEXT,
+            class_id TEXT UNIQUE,
+            description TEXT
+        )
+    ''')
+    conn.commit()
+
+def insert_course(conn, fields):
+    conn.execute('''
+        INSERT OR IGNORE INTO courses 
+        (title, instructor, location, course_type, cost, class_id, description)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        fields["title"],
+        fields["instructor"],
+        fields["location"],
+        fields["course_type"],
+        fields["cost"],
+        fields["class_id"],
+        fields["description"]
+    ))
+    conn.commit()
+
+# --- Main ---
+conn = sqlite3.connect(DB_PATH)
+create_database(conn)
+
+success = 0
+failed = []
+
+for filename in os.listdir(PDF_FOLDER):
+    if filename.endswith(".pdf"):
+        path = os.path.join(PDF_FOLDER, filename)
+        try:
+            text = extract_text(path)
+            fields = extract_fields(text)
+            insert_course(conn, fields)
+            success += 1
+        except Exception as e:
+            failed.append((filename, str(e)))
+
+conn.close()
+
+print(f"Successfully extracted: {success}")
+print(f"Failed: {len(failed)}")
+if failed:
+    for name, err in failed:
+        print(f"  - {name}: {err}")
