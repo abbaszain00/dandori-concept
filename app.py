@@ -15,7 +15,8 @@ def load_data():
     return df
 
 df = load_data()
-columns = list(df.columns)
+df_copy = df.drop(columns=["id","skills_text"])
+columns = list(df_copy.columns)
 
 # include skills_text and skill_keywords in search
 searchable_columns = [
@@ -24,32 +25,19 @@ searchable_columns = [
     "course_type",
     "location",
     "class_id",
-    "skills_text",
     "skill_keywords"
 ]
 
 # make sure searchable columns exist
-searchable_columns = [col for col in searchable_columns if col in df.columns]
+searchable_columns = [col for col in searchable_columns if col in df_copy.columns]
 
-col_search, col_autofill, col_fields = st.columns([2, 2, 3])
+col_search, col_fields = st.columns([2, 3])
 
 with col_search:
     query = st.text_input("Search", placeholder="Search for a course or skill keyword...")
 
-with col_autofill:
-    suggestions = pd.unique(df[searchable_columns].fillna("").values.ravel())
-    suggestions = [str(s) for s in suggestions if isinstance(s, str) and s.strip()]
-    if query:
-        suggestions = [s for s in suggestions if query.lower() in s.lower()]
-
-    selected_name = st.selectbox(
-        "Autofill suggestion",
-        options=[""] + suggestions[:100],  # limit size a bit
-        format_func=lambda x: "— select —" if x == "" else x
-    )
-
 with col_fields:
-    default_fields = ["title", "location", "skill_keywords"]
+    default_fields = ["location", "skill_keywords"]
     default_fields = [f for f in default_fields if f in columns]
 
     display_fields = st.multiselect(
@@ -58,10 +46,10 @@ with col_fields:
         default=default_fields
     )
 
-active_query = selected_name if selected_name else query
+active_query = query
 
 if active_query:
-    mask = df[searchable_columns].fillna("").apply(
+    mask = df_copy[searchable_columns].fillna("").apply(
         lambda col: col.str.contains(active_query, case=False, na=False)
     ).any(axis=1)
     filtered = df[mask]
