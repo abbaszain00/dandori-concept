@@ -8,6 +8,7 @@ st.set_page_config(
     layout="wide"
 )
 
+@st.cache_data
 def load_data():
     conn = sqlite3.connect("dandori.db")
     df = pd.read_sql_query("SELECT * FROM courses", conn)
@@ -15,63 +16,44 @@ def load_data():
     return df
 
 df = load_data()
-df_copy = df.drop(columns=["id","skills_text"])
-columns = list(df_copy.columns)
+df_copy = df.drop(columns=["id", "skills_text"])
 
-# include skills_text and skill_keywords in search
-searchable_columns = [
-    "title",
-    "instructor",
-    "course_type",
-    "location",
-    "class_id",
-    "skill_keywords"
-]
+searchable_columns = [col for col in [
+    "title", "instructor", "course_type",
+    "location", "class_id", "skill_keywords"
+] if col in df_copy.columns]
 
-# make sure searchable columns exist
-searchable_columns = [col for col in searchable_columns if col in df_copy.columns]
-
-col_search, col_fields = st.columns([2, 3])
-
-with col_search:
-    query = st.text_input("Search", placeholder="Search for a course or skill keyword...")
-
-with col_fields:
-    default_fields = ["location", "skill_keywords"]
-    default_fields = [f for f in default_fields if f in columns]
-
-    display_fields = st.multiselect(
-        "Get info about this course:",
-        options=columns,
-        default=default_fields
-    )
-
-active_query = query
-
-if active_query:
-    mask = df_copy[searchable_columns].fillna("").apply(
-        lambda col: col.str.contains(active_query, case=False, na=False)
-    ).any(axis=1)
-    filtered = df[mask]
-else:
-    filtered = df
-
+st.title("🌿 School of Dandori")
+st.caption("Find your next wonderful class.")
 st.divider()
 
-if active_query:
-    st.markdown(f"**{len(filtered)} course{'s' if len(filtered) != 1 else ''} found**")
-    if filtered.empty:
-        st.warning("No courses found.")
-    else:
-        for _, row in filtered.iterrows():
-            st.markdown(f"### {row['title']}")
+query = st.text_input("", placeholder="🔍  Search by keyword, location, instructor, skill...")
 
-            for field in display_fields:
-                if field in row and pd.notna(row[field]) and str(row[field]).strip():
-                    # prettier labels
-                    pretty_field = field.replace("_", " ").title()
-                    st.markdown(f"**{pretty_field}:** {row[field]}")
-
-            st.divider()
+if query:
+    mask = df_copy[searchable_columns].fillna("").apply(
+        lambda col: col.str.contains(query, case=False, na=False)
+    ).any(axis=1)
+    filtered = df_copy[mask]
 else:
-    st.info("Search for a course above to get started.")
+    filtered = df_copy
+
+st.divider()
+st.markdown(f"**{len(filtered)} course{'s' if len(filtered) != 1 else ''} found**")
+st.write("")
+
+if filtered.empty:
+    st.warning("No courses found. Try a different keyword.")
+else:
+    for _, row in filtered.iterrows():
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.markdown(f"### {row['title']}")
+            st.caption(f"👤 {row.get('instructor', '')}  |  📍 {row.get('location', '')}  |  🎨 {row.get('course_type', '')}")
+            if pd.notna(row.get("skill_keywords")) and str(row.get("skill_keywords")).strip():
+                st.caption(f"🏷️ {row['skill_keywords']}")
+        with col2:
+            st.metric("Cost", row.get("cost", ""))
+        if pd.notna(row.get("description")) and str(row.get("description")).strip():
+            with st.expander("Read more"):
+                st.write(row["description"])
+        st.write("---")
