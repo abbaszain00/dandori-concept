@@ -9,7 +9,7 @@ if "booked" not in st.session_state:
 st.set_page_config(
     page_title="School of Dandori",
     page_icon="🧑‍🏫",
-    layout="wide"
+    layout="wide",
 )
 
 @st.cache_data
@@ -82,7 +82,9 @@ else:
             st.metric("Cost", row.get("cost", ""))
             if st.button("Book this class",type="primary",key=f"{row}_book"):
                     st.session_state["booked"] = 1
-                    st.write("Transferring to payment...")
+                    st.session_state["selected_course"] = row.to_dict()
+                    st.switch_page("pages/payment.py")
+                    #st.write("Transferring to payment...")
         if pd.notna(row.get("description")) and str(row.get("description")).strip():
             with st.expander("Read more"):
                 st.write(row["description"])
