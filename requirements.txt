@@ -3,3 +3,4 @@ pandas
 pymupdf
 openai
 python-dotenv
+PyMuPDF==1.27.2.2
