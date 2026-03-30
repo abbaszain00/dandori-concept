@@ -2,9 +2,19 @@ import fitz
 import os
 import re
 import sqlite3
+import json
+from openai import OpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 PDF_FOLDER = "pdfs"
 DB_PATH = "dandori.db"
+
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_API_KEY")
+)
 
 def extract_text(pdf_path):
     doc = fitz.open(pdf_path)
@@ -64,7 +74,7 @@ def extract_fields(text, filename):
     class_id = re.search(r'Class ID:\s*([\w_]+)', text)
     class_id = class_id.group(1).strip() if class_id else ""
 
-    # Extract file number from filename and append to class_id
+    # Build unique ID from file number + class_id
     file_num_match = re.match(r'class_(\d+)_', filename)
     file_num = file_num_match.group(1) if file_num_match else "000"
     unique_id = f"{class_id}{file_num}"
@@ -89,6 +99,21 @@ def extract_fields(text, filename):
         "skill_keywords": ", ".join(skill_keywords)
     }
 
+def generate_embedding(fields):
+    # Build a descriptive string to embed
+    text_to_embed = (
+        f"{fields['title']}. "
+        f"Located in {fields['location']}. "
+        f"Course type: {fields['course_type']}. "
+        f"Skills: {fields['skill_keywords']}. "
+        f"{fields['description'][:300]}"
+    )
+    response = client.embeddings.create(
+        model="openai/text-embedding-3-small",
+        input=text_to_embed
+    )
+    return response.data[0].embedding
+
 def create_database(conn):
     conn.execute('''
         CREATE TABLE IF NOT EXISTS courses (
@@ -102,17 +127,19 @@ def create_database(conn):
             class_id TEXT,
             description TEXT,
             skills_text TEXT,
-            skill_keywords TEXT
+            skill_keywords TEXT,
+            embedding TEXT
         )
     ''')
     conn.commit()
 
-def insert_course(conn, fields):
+def insert_course(conn, fields, embedding):
     try:
         conn.execute('''
             INSERT OR REPLACE INTO courses 
-            (unique_id, title, instructor, location, course_type, cost, class_id, description, skills_text, skill_keywords)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (unique_id, title, instructor, location, course_type, cost, class_id, 
+             description, skills_text, skill_keywords, embedding)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             fields["unique_id"],
             fields["title"],
@@ -123,7 +150,8 @@ def insert_course(conn, fields):
             fields["class_id"],
             fields["description"],
             fields["skills_text"],
-            fields["skill_keywords"]
+            fields["skill_keywords"],
+            json.dumps(embedding)
         ))
         conn.commit()
         return conn.execute("SELECT changes()").fetchone()[0]
@@ -145,33 +173,22 @@ for filename in sorted(os.listdir(PDF_FOLDER)):
         try:
             text = extract_text(path)
             fields = extract_fields(text, filename)
+            embedding = generate_embedding(fields)
 
-            issues = []
-            if not fields["class_id"]:
-                issues.append("missing class_id")
-            if not fields["title"]:
-                issues.append("missing title")
-            if not fields["description"]:
-                issues.append("missing description")
-
-            inserted = insert_course(conn, fields)
+            inserted = insert_course(conn, fields, embedding)
 
             if inserted == 0:
-                skipped.append((filename, fields["class_id"], issues or ["duplicate or ignored"]))
+                skipped.append(filename)
             else:
                 success += 1
-                if issues:
-                    print(f"⚠️  {filename} — inserted but has issues: {', '.join(issues)}")
+                print(f"✅ {fields['title']}")
 
         except Exception as e:
             failed.append((filename, str(e)))
+            print(f"❌ {filename}: {e}")
 
 conn.close()
 
 print(f"\n✅ Successfully inserted: {success}")
-print(f"⏭️  Skipped (duplicate or ignored): {len(skipped)}")
-for name, cid, reasons in skipped:
-    print(f"   - {name} | class_id: '{cid}' | reason: {', '.join(reasons)}")
+print(f"⏭️  Skipped: {len(skipped)}")
 print(f"❌ Failed: {len(failed)}")
-for name, err in failed:
-    print(f"   - {name}: {err}")

@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .env
 dandori.db
+test_chatbot.py
+test.py

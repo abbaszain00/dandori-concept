@@ -1,29 +1,133 @@
 import sqlite3
+import json
+import os
+import numpy as np
 import pandas as pd
 from openai import OpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 DB_PATH = "dandori.db"
 
-# Pull all courses from the database
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_API_KEY")
+)
+
 def get_all_courses():
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query(
-        "SELECT title, instructor, location, course_type, cost, class_id, skill_keywords, description FROM courses",
+        "SELECT title, instructor, location, course_type, cost, class_id, skill_keywords, description, embedding FROM courses",
         conn
     )
     conn.close()
     return df
 
-# Simple keyword search across key fields
-def search_relevant_courses(query, df, max_results=5):
-    query_lower = query.lower()
-    fields = ["title", "location", "course_type", "skill_keywords", "description"]
-    mask = df[fields].fillna("").apply(
-        lambda col: col.str.contains(query_lower, case=False)
-    ).any(axis=1)
-    return df[mask].head(max_results)
+def get_query_embedding(query, timeout=10):
+    try:
+        response = client.embeddings.create(
+            model="openai/text-embedding-3-small",
+            input=query,
+            timeout=timeout
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        print(f"  ⚠️ Embedding error: {e}")
+        return None
 
-# Format courses into a string for the AI prompt
+def extract_intent(user_message, api_key):
+    intent_client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key
+    )
+    response = intent_client.chat.completions.create(
+        model="openai/gpt-4o-mini",
+        messages=[{
+            "role": "user",
+            "content": f"""Extract the search intent from this message: "{user_message}"
+
+Reply with JSON only, no explanation, no markdown:
+{{"location": "city or region mentioned, or null", "topic": "the specific activity or subject, or null", "expanded_topic": "comma separated list of related terms to help search, or null", "specific": true or false}}
+
+Rules:
+- topic must be a specific activity or descriptive theme — never meta-words like "courses", "classes", "anything", "something", "do"
+- always try to extract a meaningful topic even from indirect phrasing like "something with wood" or "I want to make things"
+- expanded_topic should include synonyms, related activities, and specific examples — this helps find relevant courses
+- specific should be true if the topic is a concrete well-defined activity (e.g. pottery, yoga, blacksmithing, knitting) — false if it is broad or general (e.g. food, craft, creative, fun, social)
+- if topic is null, expanded_topic must also be null and specific must be false
+- if no location is mentioned, location must be null
+
+Examples:
+"courses in Devon" -> {{"location": "Devon", "topic": null, "expanded_topic": null, "specific": false}}
+"classes in York" -> {{"location": "York", "topic": null, "expanded_topic": null, "specific": false}}
+"pottery in Brighton" -> {{"location": "Brighton", "topic": "pottery", "expanded_topic": "pottery, ceramics, clay, sculpting, wheel throwing", "specific": true}}
+"anything in Devon" -> {{"location": "Devon", "topic": null, "expanded_topic": null, "specific": false}}
+"something relaxing" -> {{"location": null, "topic": "relaxing", "expanded_topic": "relaxing, mindfulness, meditation, calm, zen, stress relief, gentle", "specific": false}}
+"knitting classes" -> {{"location": null, "topic": "knitting", "expanded_topic": "knitting, crochet, yarn, fiber arts, wool, stitching, weaving", "specific": true}}
+"hello" -> {{"location": null, "topic": null, "expanded_topic": null, "specific": false}}
+"I fancy something with animals" -> {{"location": null, "topic": "animals", "expanded_topic": "animals, wildlife, creatures, hedgehog, birds, nature, foraging, ecology", "specific": false}}
+"anything historical" -> {{"location": null, "topic": "historical", "expanded_topic": "historical, medieval, victorian, heritage, traditional, ancient, folklore", "specific": false}}
+"something mindful" -> {{"location": null, "topic": "mindfulness", "expanded_topic": "mindfulness, meditation, zen, relaxation, wellbeing, calm, breathing", "specific": false}}
+"something with wood" -> {{"location": null, "topic": "woodworking", "expanded_topic": "woodworking, carving, whittling, timber, wood crafts, joinery", "specific": true}}
+"something good for stress" -> {{"location": null, "topic": "stress relief", "expanded_topic": "stress relief, relaxation, mindfulness, meditation, calm, wellbeing, gentle", "specific": false}}
+"I want to make something with my hands" -> {{"location": null, "topic": "handcraft", "expanded_topic": "handcraft, making, crafting, sculpting, building, creating, hands-on", "specific": false}}
+"something weird and unusual" -> {{"location": null, "topic": "unusual", "expanded_topic": "unusual, quirky, eccentric, strange, whimsical, unique, bizarre", "specific": false}}
+"something to do with the sea or coast" -> {{"location": null, "topic": "coastal", "expanded_topic": "coastal, sea, ocean, beach, maritime, nautical, seaside, fishing", "specific": false}}
+"something I can do with a friend" -> {{"location": null, "topic": "social activity", "expanded_topic": "social activity, group classes, team building, community, shared experiences, fun with others", "specific": false}}
+"yoga in Edinburgh" -> {{"location": "Edinburgh", "topic": "yoga", "expanded_topic": "yoga, hatha yoga, vinyasa, meditation, flexibility, wellness, mindfulness", "specific": true}}
+"anything with food in Cornwall" -> {{"location": "Cornwall", "topic": "food", "expanded_topic": "food, cuisine, dining, culinary experiences, local dishes, gastronomy", "specific": false}}
+"something crafty in Bath" -> {{"location": "Bath", "topic": "craft", "expanded_topic": "craft, arts and crafts, DIY, handmade, creativity, workshops, making", "specific": false}}"""
+        }],
+        max_tokens=150
+    )
+    try:
+        return json.loads(response.choices[0].message.content)
+    except:
+        return {"location": None, "topic": None, "expanded_topic": None, "specific": False}
+
+def search_relevant_courses(query, df, api_key, location=None, topic=None, expanded_topic=None, specific=False, max_results=5):
+    # Nothing to search on - return empty
+    if not location and not topic:
+        return df.iloc[0:0].drop(columns=["embedding"])
+
+    working_df = df.copy()
+
+    # Filter by location if provided
+    if location:
+        working_df = working_df[
+            working_df["location"].str.lower().str.contains(location.lower(), na=False)
+        ]
+        if working_df.empty:
+            return df.iloc[0:0].drop(columns=["embedding"])
+
+    # Rank by topic if provided
+    if topic:
+        search_text = expanded_topic if expanded_topic else topic
+        topic_embedding_raw = get_query_embedding(search_text)
+        if topic_embedding_raw is None:
+            return df.iloc[0:0].drop(columns=["embedding"])
+
+        topic_embedding = np.array(topic_embedding_raw)
+        embeddings = np.array([json.loads(e) for e in working_df["embedding"]])
+        scores = embeddings @ topic_embedding / (
+            np.linalg.norm(embeddings, axis=1) * np.linalg.norm(topic_embedding)
+        )
+        working_df = working_df.copy()
+        working_df["_score"] = scores
+
+        # Specific topics get strict threshold, broad topics get looser one
+        if location:
+            threshold = 0.47 if specific else 0.36
+        else:
+            threshold = 0.28
+
+        working_df = working_df[working_df["_score"] >= threshold]
+        working_df = working_df.sort_values("_score", ascending=False)
+        working_df = working_df.drop(columns=["_score"])
+
+    return working_df.drop(columns=["embedding"]).head(max_results)
+
 def format_courses_for_prompt(courses_df):
     if courses_df.empty:
         return "No matching courses found."
@@ -35,9 +139,8 @@ def format_courses_for_prompt(courses_df):
         )
     return "\n".join(lines)
 
-# Send user message + relevant courses to the AI and get a response
-def get_ai_response(user_message, courses_context, api_key):
-    client = OpenAI(
+def get_ai_response(user_message, courses_context, api_key, chat_history=None):
+    response_client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_key
     )
@@ -49,22 +152,30 @@ Rules:
 - Only recommend courses from the list given. Never make up courses.
 - Be warm and match the school's playful tone.
 - Keep it brief - a couple of sentences then list suggestions.
-- If nothing matches, say so honestly.
-- Never pretend to be human."""
+- If no courses were found, say so honestly. Do NOT suggest alternatives from other locations or unrelated topics.
+- Never pretend to be human.
+- You have memory of the conversation - use it to give helpful follow up responses."""
 
-    user_prompt = f"""Customer said: "{user_message}"
+    messages = [{"role": "system", "content": system_prompt}]
 
-Relevant courses:
+    if chat_history:
+        for msg in chat_history[:-1]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+    no_results = courses_context == "No matching courses found."
+    messages.append({
+        "role": "user",
+        "content": f"""Customer said: "{user_message}"
+
+Relevant courses found:
 {courses_context}
 
-Suggest the best matches in a friendly way."""
+{"IMPORTANT: No courses were found. Tell the customer honestly. Do NOT suggest alternatives." if no_results else "Respond helpfully using the conversation history and these courses."}"""
+    })
 
-    response = client.chat.completions.create(
+    response = response_client.chat.completions.create(
         model="openai/gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
+        messages=messages,
         max_tokens=500
     )
     return response.choices[0].message.content
