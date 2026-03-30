@@ -2,6 +2,9 @@ import pandas as pd
 import streamlit as st
 import sqlite3
 
+if "booked" not in st.session_state:
+    st.session_state["booked"] = 0
+
 st.set_page_config(
     page_title="School of Dandori",
     page_icon="🧑‍🏫",
@@ -30,7 +33,7 @@ st.divider()
 col_search, col_location = st.columns([3, 2])
 
 with col_search:
-    query = st.text_input("", placeholder="🔍  Search by keyword, location, instructor, skill...")
+    query = st.text_input("Search a course:", placeholder="🔍  Search by keyword, location, instructor, skill...", label_visibility="hidden")
 
 with col_location:
     locations = ["All locations"] + sorted(df_copy["location"].dropna().unique().tolist())
@@ -63,6 +66,9 @@ else:
                 st.caption(f"🏷️ {row['skill_keywords']}")
         with col2:
             st.metric("Cost", row.get("cost", ""))
+            if st.button("Book this class",type="primary",key=f"{row}_book"):
+                    st.session_state["booked"] = 1
+                    st.write("Transferring to payment...")
         if pd.notna(row.get("description")) and str(row.get("description")).strip():
             with st.expander("Read more"):
                 st.write(row["description"])
