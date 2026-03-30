@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 import sqlite3
+import re
 
 if "booked" not in st.session_state:
     st.session_state["booked"] = 0
@@ -25,6 +26,12 @@ searchable_columns = [col for col in [
     "title", "instructor", "course_type",
     "location", "class_id", "skill_keywords"
 ] if col in df_copy.columns]
+
+def parse_cost(cost_str):
+    if not cost_str:
+        return float('inf')
+    match = re.search(r'[\d.]+', cost_str)
+    return float(match.group()) if match else float('inf')
 
 st.title("🌿 School of Dandori")
 st.caption("Find your next wonderful class.")
@@ -57,6 +64,13 @@ st.write("")
 if filtered.empty:
     st.warning("No courses found. Try a different keyword.")
 else:
+    sort_order = st.selectbox("Sort by Price:", options=["Default", "Price: Low to High", "Price: High to Low"])
+
+    if sort_order == "Price: Low to High":
+        filtered = filtered.iloc[filtered["cost"].map(parse_cost).argsort().values]
+    elif sort_order == "Price: High to Low":
+        filtered = filtered.iloc[filtered["cost"].map(parse_cost).argsort()[::-1].values]
+
     for _, row in filtered.iterrows():
         col1, col2 = st.columns([4, 1])
         with col1:
