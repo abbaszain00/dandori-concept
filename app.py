@@ -27,7 +27,14 @@ st.title("🌿 School of Dandori")
 st.caption("Find your next wonderful class.")
 st.divider()
 
-query = st.text_input("", placeholder="🔍  Search by keyword, location, instructor, skill...")
+col_search, col_location = st.columns([3, 2])
+
+with col_search:
+    query = st.text_input("", placeholder="🔍  Search by keyword, location, instructor, skill...")
+
+with col_location:
+    locations = ["All locations"] + sorted(df_copy["location"].dropna().unique().tolist())
+    location_filter = st.selectbox("Location", locations)
 
 if query:
     mask = df_copy[searchable_columns].fillna("").apply(
@@ -36,6 +43,9 @@ if query:
     filtered = df_copy[mask]
 else:
     filtered = df_copy
+
+if location_filter != "All locations":
+    filtered = filtered[filtered["location"] == location_filter]
 
 st.divider()
 st.markdown(f"**{len(filtered)} course{'s' if len(filtered) != 1 else ''} found**")
