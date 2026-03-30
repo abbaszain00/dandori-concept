@@ -36,3 +36,10 @@ with st.form("booking_form"):
             st.error("Please enter a valid email address.")
         else:
             st.success(f"Booking confirmed! A confirmation email has been sent to {email}")
+    
+blank_col, cancel_col = st.columns([3,2])
+with cancel_col:
+    cancelled = st.button("Cancel booking",type="primary",width="stretch")
+    if cancelled:
+            del st.session_state["selected_course"]
+            st.switch_page("./app.py")
