@@ -1,11 +1,17 @@
 import streamlit as st
-import pandas as pd
 
 st.set_page_config(
     page_title="Class Payment Form",
     page_icon="💳",
     layout="wide"
 )
+
+def local_css(file_name):
+    with open(file_name) as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    f.close()
+
+local_css("assets/style.css")
 
 st.title("Class Booking")
 st.subheader("Your selected course:")

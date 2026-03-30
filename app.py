@@ -3,14 +3,18 @@ import streamlit as st
 import sqlite3
 import re
 
-if "booked" not in st.session_state:
-    st.session_state["booked"] = 0
-
 st.set_page_config(
     page_title="School of Dandori",
     page_icon="🧑‍🏫",
     layout="wide",
 )
+
+def local_css(file_name):
+    with open(file_name) as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    f.close()
+
+local_css("assets/style.css")
 
 @st.cache_data
 def load_data():
@@ -34,7 +38,7 @@ def parse_cost(cost_str):
     return float(match.group()) if match else float('inf')
 
 st.title("🌿 School of Dandori")
-st.caption("Find your next wonderful class.")
+st.subheader("Find your next wonderful class.")
 st.divider()
 
 col_search, col_location = st.columns([3, 2])
@@ -75,13 +79,12 @@ else:
         col1, col2 = st.columns([4, 1])
         with col1:
             st.markdown(f"### {row['title']}")
-            st.caption(f"👤 {row.get('instructor', '')}  |  📍 {row.get('location', '')}  |  🎨 {row.get('course_type', '')}")
+            st.write(f"👤 {row.get('instructor', '')}  |  📍 {row.get('location', '')}  |  🎨 {row.get('course_type', '')}")
             if pd.notna(row.get("skill_keywords")) and str(row.get("skill_keywords")).strip():
-                st.caption(f"🏷️ {row['skill_keywords']}")
+                st.write(f"🏷️ {row['skill_keywords']}")
         with col2:
             st.metric("Cost", row.get("cost", ""))
             if st.button("Book this class",type="primary",key=f"{row}_book"):
-                    st.session_state["booked"] = 1
                     st.session_state["selected_course"] = row.to_dict()
                     st.switch_page("pages/payment.py")
                     #st.write("Transferring to payment...")
