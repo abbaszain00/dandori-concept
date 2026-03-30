@@ -46,6 +46,8 @@ with st.form("booking_form"):
 blank_col, cancel_col = st.columns([3,2])
 with cancel_col:
     cancelled = st.button("Cancel booking",type="primary",width="stretch")
+    st.write('''If you came here from the chatbot, don't worry! Your chat history is saved while you're still connected to our site. \
+    Just hit the button on the main page again, or navigate to the Course Discovery page in the sidebar to pick up where you left off :)''')
     if cancelled:
             del st.session_state["selected_course"]
             st.switch_page("./app.py")

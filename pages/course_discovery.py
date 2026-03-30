@@ -10,8 +10,25 @@ from chatbot import get_all_courses, extract_intent, search_relevant_courses, fo
 load_dotenv()
 api_key = os.getenv("OPENROUTER_API_KEY")
 
+def local_css(file_name):
+    with open(file_name) as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    f.close()
+
+local_css("assets/style.css")
+
 st.title("🌿 Course Discovery")
-st.caption("Tell us what you're looking for and we'll find something wonderful.")
+st.subheader("Tell us what you're looking for and we'll find something wonderful.")
+
+st.write('''**Advice:** This is a generative AI powered conversation, not like one with a human! \
+Sometimes it makes mistakes or gets confused (don't we all). If you change your mind about what you want to ask, use one of these phrases to reset: \
+'forget this', 'never mind', 'ignore that', 'start again'. Happy chatting!''')
+
+blank_col, return_home = st.columns([3,2])
+with return_home:
+    home = st.button("Take me back home!",type="primary",width="stretch")
+    if home:
+        st.switch_page("./app.py")
 st.divider()
 
 if "messages" not in st.session_state:
@@ -29,9 +46,9 @@ def render_course_card(row, msg_index):
     col1, col2 = st.columns([4, 1])
     with col1:
         st.markdown(f"### {row['title']}")
-        st.caption(f"👤 {row.get('instructor', '')}  |  📍 {row.get('location', '')}  |  🎨 {row.get('course_type', '')}")
+        st.write(f"👤 {row.get('instructor', '')}  |  📍 {row.get('location', '')}  |  🎨 {row.get('course_type', '')}")
         if pd.notna(row.get("skill_keywords")) and str(row.get("skill_keywords")).strip():
-            st.caption(f"🏷️ {row['skill_keywords']}")
+            st.write(f"🏷️ {row['skill_keywords']}")
     with col2:
         st.metric("Cost", row.get("cost", ""))
         if st.button("Book", type="primary", key=f"chat_{msg_index}_{row['class_id']}_book"):

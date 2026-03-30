@@ -44,12 +44,21 @@ st.title("🌿 School of Dandori")
 st.subheader("Find your next wonderful class.")
 st.divider()
 
+# Link to chatbot
+chat_text, chat_button = st.columns([3,2])
+with chat_text:
+    st.write("Not sure what you're looking for? Click the button to chat with our friendly machine helper! Or, search for a course below :)")
+with chat_button:
+    chatbot = st.button("Start chatting!",type="primary",width="stretch")
+    if chatbot:
+        st.switch_page("pages/course_discovery.py")
+st.divider()
+
 # Search and location filter
 col_search, col_location = st.columns([3, 2])
 
 with col_search:
     query = st.text_input("Search", placeholder="🔍  keyword, location, instructor, skill...", label_visibility="hidden")
-
 with col_location:
     locations = ["All locations"] + sorted(df["location"].dropna().unique().tolist())
     location_filter = st.selectbox("Location", locations)
@@ -94,7 +103,6 @@ else:
             if st.button("Book this class",type="primary",key=f"{row}_book"):
                     st.session_state["selected_course"] = row.to_dict()
                     st.switch_page("pages/payment.py")
-                    #st.write("Transferring to payment...")
         if pd.notna(row.get("description")) and str(row.get("description")).strip():
             with st.expander("Read more"):
                 st.write(row["description"])
