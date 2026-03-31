@@ -10,8 +10,8 @@ from chatbot import (
     extract_intent,
     search_relevant_courses,
     format_courses_for_prompt,
-    get_ai_response_stream,    # FIX 6: streaming version
-    detect_course_reference,   # FIX 3: ordinal reference detection
+    get_ai_response_stream,
+    detect_course_reference,
 )
 
 load_dotenv()
@@ -48,7 +48,6 @@ if "last_expanded_topic" not in st.session_state:
     st.session_state.last_expanded_topic = None
 if "last_specific" not in st.session_state:
     st.session_state.last_specific = False
-# FIX 3: Store the last set of results so we can resolve "the second one" etc.
 if "last_courses" not in st.session_state:
     st.session_state.last_courses = pd.DataFrame()
 
@@ -81,14 +80,13 @@ for i, msg in enumerate(st.session_state.messages):
 # Handle new message
 if prompt := st.chat_input("e.g. something creative in Devon, or a relaxing class this weekend..."):
 
-    # Reset context if user wants to start fresh
     reset_phrases = ["forget that", "never mind", "start over", "ignore that", "actually forget"]
     if any(phrase in prompt.lower() for phrase in reset_phrases):
         st.session_state.last_location = None
         st.session_state.last_topic = None
         st.session_state.last_expanded_topic = None
         st.session_state.last_specific = False
-        st.session_state.last_courses = pd.DataFrame()  # FIX 3: clear stored results too
+        st.session_state.last_courses = pd.DataFrame()
 
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -97,9 +95,7 @@ if prompt := st.chat_input("e.g. something creative in Devon, or a relaxing clas
     with st.chat_message("assistant"):
         with st.spinner("Finding something wonderful..."):
 
-            # ---- FIX 3: Check for ordinal reference before calling any API ----
-            # If the user says "the second one", resolve it from stored results
-            # instead of running the full intent → embed → search pipeline.
+            # Check if user is referring to a previously shown course
             ref_index = detect_course_reference(prompt)
             is_reference = (
                 ref_index is not None
@@ -107,7 +103,6 @@ if prompt := st.chat_input("e.g. something creative in Devon, or a relaxing clas
             )
 
             if is_reference:
-                # Resolve "last" to the actual final index
                 last = st.session_state.last_courses
                 if ref_index == -1:
                     ref_index = len(last) - 1
@@ -120,7 +115,7 @@ if prompt := st.chat_input("e.g. something creative in Devon, or a relaxing clas
                 is_fallback = False
 
             else:
-                # ---- Normal flow: extract intent → search ----
+                # Normal flow: extract intent then search
                 df = get_all_courses()
 
                 intent = extract_intent(prompt, api_key)
@@ -135,7 +130,7 @@ if prompt := st.chat_input("e.g. something creative in Devon, or a relaxing clas
                 expanded_topic = new_expanded_topic if new_expanded_topic else st.session_state.last_expanded_topic
                 specific = new_specific if new_topic else st.session_state.last_specific
 
-                # Reset if nothing extracted
+                # Reset if nothing extracted (greeting, gibberish, etc.)
                 if not new_location and not new_topic:
                     location = None
                     topic = None
@@ -155,7 +150,6 @@ if prompt := st.chat_input("e.g. something creative in Devon, or a relaxing clas
                     if new_topic:
                         st.session_state.last_specific = new_specific
 
-                # FIX 4: search now returns (matches, fallback) tuple
                 matches, fallback = search_relevant_courses(
                     prompt, df, api_key,
                     location=location,
@@ -165,11 +159,11 @@ if prompt := st.chat_input("e.g. something creative in Devon, or a relaxing clas
                 )
                 is_fallback = not fallback.empty
 
-        # Decide which courses to display: matches if we have them, fallback otherwise
+        # Show matches if we have them, otherwise show the fallback
         display_courses = matches if not matches.empty else fallback
         context = format_courses_for_prompt(display_courses)
 
-        # FIX 6: Stream the AI response token by token
+        # Stream the response token by token
         reply = st.write_stream(
             get_ai_response_stream(
                 prompt, context, api_key,
@@ -183,7 +177,6 @@ if prompt := st.chat_input("e.g. something creative in Devon, or a relaxing clas
             for _, row in display_courses.iterrows():
                 render_course_card(row, len(st.session_state.messages))
 
-        # FIX 3: Store these results for future reference resolution
         st.session_state.last_courses = display_courses
 
     st.session_state.messages.append({
