@@ -18,8 +18,8 @@ st.subheader("Your selected course:")
 
 if "selected_course" in st.session_state:
     course = st.session_state["selected_course"]
-    st.write(f"Title: {course["title"]}")
-    st.write(f"Price: {course["cost"]}")
+    st.write(f"Title: {course['title']}")
+    st.write(f"Price: {course['cost']}")
 else:
     st.write("No course selected. Please return to the main page and click the 'Book this class' button to book a course!")
     st.stop()
